@@ -49,35 +49,169 @@ Rayfield:Notify({
 	Image = 13047715178,
 })
 
--- 🪂 Infinite Jump
+-- =========================
+-- Infinite / Unlimited Jump
+-- Works on PC (Space) and Mobile (on-screen button)
+-- =========================
+
+-- state
+local infJumpEnabled = false
+local infJumpInitialized = false
+local infJumpConns = {
+	input = nil,
+	render = nil,
+	charAdded = nil
+}
+local mobileJumpGui = nil
+local mobileJumpPressed = false
+
+local plr = Players.LocalPlayer
+local isMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
+
+local function createMobileInfJumpButton()
+	-- don't recreate if exists
+	local playerGui = plr:WaitForChild("PlayerGui")
+	if playerGui:FindFirstChild("InfJumpGUI") then
+		mobileJumpGui = playerGui:FindFirstChild("InfJumpGUI")
+		return
+	end
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "InfJumpGUI"
+	screenGui.ResetOnSpawn = false
+	screenGui.Parent = playerGui
+
+	local btn = Instance.new("TextButton")
+	btn.Name = "InfJumpButton"
+	btn.Size = UDim2.new(0, 92, 0, 92)
+	btn.Position = UDim2.new(1, -110, 1, -140)
+	btn.AnchorPoint = Vector2.new(0, 0)
+	btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	btn.BackgroundTransparency = 0.25
+	btn.BorderSizePixel = 0
+	btn.Text = "Jump\n(On)"
+	btn.TextWrapped = true
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 18
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 16)
+	corner.Parent = btn
+
+	-- pressed & released
+	btn.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			mobileJumpPressed = true
+			btn.BackgroundColor3 = Color3.fromRGB(85, 150, 255)
+		end
+	end)
+	btn.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			mobileJumpPressed = false
+			btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		end
+	end)
+
+	mobileJumpGui = screenGui
+end
+
+local function removeMobileInfJumpButton()
+	if mobileJumpGui and mobileJumpGui.Parent then
+		mobileJumpGui:Destroy()
+		mobileJumpGui = nil
+	end
+	mobileJumpPressed = false
+end
+
+local function startInfJump()
+	if infJumpInitialized then return end
+	infJumpInitialized = true
+
+	-- keyboard (PC): detect Space
+	infJumpConns.input = UIS.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if not infJumpEnabled then return end
+		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.Space then
+			local char = plr.Character
+			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				-- set Jump property and also force Jumping state for compatibility
+				humanoid.Jump = true
+				pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end)
+			end
+		end
+	end)
+
+	-- render loop: for mobile button hold and safety continuous trigger
+	infJumpConns.render = RunService.RenderStepped:Connect(function()
+		if not infJumpEnabled then return end
+		local char = plr.Character
+		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			-- mobile: while button held, force Jump each frame
+			if isMobile and mobileJumpPressed then
+				humanoid.Jump = true
+			end
+			-- fallback: if player taps anywhere (touch input) you might want to trigger a single jump
+			-- (Optional) Uncomment below to make any touch trigger a jump:
+			-- if isMobile and UIS.TouchEnabled then ... (careful: may conflict with UI)
+		end
+	end)
+
+	-- recreate mobile button after respawn if enabled
+	infJumpConns.charAdded = plr.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		if infJumpEnabled and isMobile then
+			createMobileInfJumpButton()
+		end
+	end)
+end
+
+local function stopInfJump()
+	infJumpEnabled = false
+	-- do NOT immediately destroy connections if you want to reuse; but here we clean them up to avoid duplicates
+	if infJumpConns.input then infJumpConns.input:Disconnect() infJumpConns.input = nil end
+	if infJumpConns.render then infJumpConns.render:Disconnect() infJumpConns.render = nil end
+	if infJumpConns.charAdded then infJumpConns.charAdded:Disconnect() infJumpConns.charAdded = nil end
+	infJumpInitialized = false
+
+	-- remove mobile UI
+	removeMobileInfJumpButton()
+end
+
+-- GUI toggle (replace old CreateButton for infinite jump with this)
 MainTab:CreateButton({
 	Name = "🪂 Infinite Jump Toggle",
 	Callback = function()
-		_G.infinjump = not _G.infinjump
+		infJumpEnabled = not infJumpEnabled
 
-		if _G.infinJumpStarted == nil then
-			_G.infinJumpStarted = true
-			local plr = Players.LocalPlayer
-			local m = plr:GetMouse()
-			m.KeyDown:Connect(function(k)
-				-- safe check dan cuma tangani space
-				if _G.infinjump and k:byte() == 32 then
-					local char = plr.Character
-					if char then
-						local humanoid = char:FindFirstChildOfClass('Humanoid')
-						if humanoid then
-							humanoid:ChangeState('Jumping')
-							task.wait()
-							-- fallback agar tidak tetap di seated
-							pcall(function() humanoid:ChangeState('Seated') end)
-						end
-					end
-				end
-			end)
+		if infJumpEnabled then
+			-- init connections (only once)
+			startInfJump()
+
+			-- show mobile button if mobile
+			if isMobile then
+				createMobileInfJumpButton()
+			end
+
+			Rayfield:Notify({
+				Title = "🪂 Infinite Jump",
+				Content = "Aktif — PC: tekan Space. Mobile: tahan tombol On-Screen untuk terus jump.",
+				Duration = 4,
+			})
+		else
+			-- disable and cleanup
+			stopInfJump()
+			Rayfield:Notify({
+				Title = "🪂 Infinite Jump",
+				Content = "Dimatikan.",
+				Duration = 3,
+			})
 		end
 	end,
 })
-
 -- 🏃 WalkSpeed Slider
 MainTab:CreateSlider({
 	Name = "🏃 WalkSpeed",
