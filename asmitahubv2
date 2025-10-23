@@ -1,8 +1,7 @@
--- asmitahub (rapi & deduplikasi) - diperbaiki infinite jump agar kompatibel mobile
--- Rayfield Loader
+--// 🔰 Rayfield Loader
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
--- Services (dideklarasikan sekali)
+-- Services (single declaration to avoid shadowing)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -24,7 +23,8 @@ local Window = Rayfield:CreateWindow({
 		Invite = "noinvitelink",
 		RememberJoins = true
 	},
-	KeySystem = true,
+	-- NOTE: set KeySystem = false agar GUI langsung muncul. Jika ingin pakai key system, kembalikan ke true dan atur KeySettings.
+	KeySystem = false,
 	KeySettings = {
 		Title = "asmita Hub Key",
 		Subtitle = "Key System",
@@ -39,7 +39,8 @@ local Window = Rayfield:CreateWindow({
 -----------------------------------------------------------
 -- 🏠 MAIN TAB
 -----------------------------------------------------------
-local MainTab = Window:CreateTab("🏠 Home", nil)
+-- Added icon ids for tabs to ensure visibility in Rayfield
+local MainTab = Window:CreateTab("🏠 Home", 13047715178)
 
 Rayfield:Notify({
 	Title = "asmita Hub Loaded! ✅",
@@ -48,52 +49,31 @@ Rayfield:Notify({
 	Image = 13047715178,
 })
 
--- Infinite Jump (diperbaiki untuk mobile & PC)
-local infiniteJumpEnabled = false
-_G.infinjump = false -- tetap sediakan global agar kompatibel dengan referensi lama
-local jumpConn = nil
-
--- Buat handler JumpRequest satu kali (mendukung on-screen jump di mobile)
-if not jumpConn then
-	jumpConn = UIS.JumpRequest:Connect(function()
-		if infiniteJumpEnabled then
-			local plr = Players.LocalPlayer
-			local char = plr.Character
-			-- jika karakter belum ada, abaikan (JumpRequest akan dipicu lagi saat ada)
-			if not char then return end
-			local humanoid = char:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				-- paksa state Jumping agar bisa melakukan multi-jump
-				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-				-- sedikit jeda lalu set ke Seated agar state bisa di-reset untuk jump berikutnya
-				task.delay(0.05, function()
-					if humanoid and humanoid.Parent then
-						pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Seated) end)
-					end
-				end)
-			end
-		end
-	end)
-end
-
+-- 🪂 Infinite Jump
 MainTab:CreateButton({
 	Name = "🪂 Infinite Jump Toggle",
 	Callback = function()
-		infiniteJumpEnabled = not infiniteJumpEnabled
-		_G.infinjump = infiniteJumpEnabled
+		_G.infinjump = not _G.infinjump
 
-		if infiniteJumpEnabled then
-			Rayfield:Notify({
-				Title = "🪂 Infinite Jump",
-				Content = "Infinite Jump Aktif! Tekan tombol lompat (Space / on-screen) untuk melompat di udara.",
-				Duration = 4,
-			})
-		else
-			Rayfield:Notify({
-				Title = "🪂 Infinite Jump",
-				Content = "Infinite Jump Dimatikan.",
-				Duration = 3,
-			})
+		if _G.infinJumpStarted == nil then
+			_G.infinJumpStarted = true
+			local plr = Players.LocalPlayer
+			local m = plr:GetMouse()
+			m.KeyDown:Connect(function(k)
+				-- safe check dan cuma tangani space
+				if _G.infinjump and k:byte() == 32 then
+					local char = plr.Character
+					if char then
+						local humanoid = char:FindFirstChildOfClass('Humanoid')
+						if humanoid then
+							humanoid:ChangeState('Jumping')
+							task.wait()
+							-- fallback agar tidak tetap di seated
+							pcall(function() humanoid:ChangeState('Seated') end)
+						end
+					end
+				end
+			end)
 		end
 	end,
 })
@@ -107,9 +87,8 @@ MainTab:CreateSlider({
 	CurrentValue = 16,
 	Callback = function(Value)
 		local char = Players.LocalPlayer.Character
-		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid.WalkSpeed = Value
+		if char and char:FindFirstChildOfClass("Humanoid") then
+			char:FindFirstChildOfClass("Humanoid").WalkSpeed = Value
 		end
 	end,
 })
@@ -123,9 +102,8 @@ MainTab:CreateSlider({
 	CurrentValue = 50,
 	Callback = function(Value)
 		local char = Players.LocalPlayer.Character
-		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid.JumpPower = Value
+		if char and char:FindFirstChildOfClass("Humanoid") then
+			char:FindFirstChildOfClass("Humanoid").JumpPower = Value
 		end
 	end,
 })
@@ -133,14 +111,19 @@ MainTab:CreateSlider({
 -----------------------------------------------------------
 -- 🏝 TELEPORT TAB (CP0 - CP15)
 -----------------------------------------------------------
-local TPTab = Window:CreateTab("🏝 Teleports", nil)
+local TPTab = Window:CreateTab("🏝 Teleports", 4483362458)
 local player = Players.LocalPlayer
 
 -- Fungsi aman untuk mengambil checkpoint
 local function getCheckpoint(name)
 	local success, result = pcall(function()
-		local cps = Workspace:WaitForChild("Checkpoints", 5)
-		return cps and cps:FindFirstChild(name)
+		local cps = Workspace:FindFirstChild("Checkpoints")
+		if cps then
+			return cps:FindFirstChild(name)
+		else
+			-- fallback: cari langsung di workspace path yang sering dipakai
+			return Workspace:FindFirstChild(name)
+		end
 	end)
 	return success and result or nil
 end
@@ -155,14 +138,14 @@ end
 local function teleportTo(target, name)
 	if not target then
 		Rayfield:Notify({
-			Title = "⚠ Gagal Teleport",
+			Title = "⚠️ Gagal Teleport",
 			Content = name .. " tidak ditemukan di workspace!",
 			Duration = 3,
 		})
 		return
 	end
 	local char = player.Character or player.CharacterAdded:Wait()
-	local hrp = char:WaitForChild("HumanoidRootPart")
+	local hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
 	hrp.CFrame = target.CFrame + Vector3.new(0, 3, 0)
 	Rayfield:Notify({
 		Title = "✅ Teleport Berhasil!",
@@ -173,10 +156,11 @@ end
 
 -- Tambahkan tombol teleport untuk CP0–CP15
 for i = 0, 15 do
+	local idx = i
 	TPTab:CreateButton({
-		Name = "🚩 Checkpoint CP" .. i,
+		Name = "🚩 Checkpoint CP" .. idx,
 		Callback = function()
-			teleportTo(checkpoints[i], "CP" .. i)
+			teleportTo(checkpoints[idx], "CP" .. idx)
 		end,
 	})
 end
@@ -184,22 +168,29 @@ end
 -----------------------------------------------------------
 -- 🪽 FLY TAB (PC & MOBILE COMPATIBLE)
 -----------------------------------------------------------
-local FlyTab = Window:CreateTab("🪽 Fly", nil)
+local FlyTab = Window:CreateTab("🪽 Fly", 4583362458)
 local flying = false
 local flySpeed = 60
 local flyConn = nil
 local bodyVel, bodyGyro
 
 -- Variabel kontrol mobile
-local moveForward, moveBackward, moveLeft, moveRight, moveUp, moveDown =
-	false, false, false, false, false, false
+local moveForward = false
+local moveBackward = false
+local moveLeft = false
+local moveRight = false
+local moveUp = false
+local moveDown = false
 
 -- Deteksi platform
 local isMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
 
 local function stopFly(char)
-	if bodyVel then bodyVel:Destroy() bodyVel = nil end
-	if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		if bodyVel then bodyVel:Destroy() bodyVel = nil end
+		if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+	end
 	if flyConn then flyConn:Disconnect() flyConn = nil end
 
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
@@ -207,9 +198,14 @@ local function stopFly(char)
 		humanoid.PlatformStand = false
 		pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Running) end)
 	end
-
-	moveForward, moveBackward, moveLeft, moveRight, moveUp, moveDown =
-		false, false, false, false, false, false
+	
+	-- Reset kontrol mobile
+	moveForward = false
+	moveBackward = false
+	moveLeft = false
+	moveRight = false
+	moveUp = false
+	moveDown = false
 end
 
 local function startFly()
@@ -237,23 +233,24 @@ local function startFly()
 		local camCF = Workspace.CurrentCamera.CFrame
 		local moveDir = Vector3.zero
 
-		if UIS:IsKeyDown(Enum.KeyCode.W) or moveForward then
-			moveDir += camCF.LookVector
+		-- Kontrol PC (Keyboard)
+		if UIS:IsKeyDown(Enum.KeyCode.W) or moveForward then 
+			moveDir += camCF.LookVector 
 		end
-		if UIS:IsKeyDown(Enum.KeyCode.S) or moveBackward then
-			moveDir -= camCF.LookVector
+		if UIS:IsKeyDown(Enum.KeyCode.S) or moveBackward then 
+			moveDir -= camCF.LookVector 
 		end
-		if UIS:IsKeyDown(Enum.KeyCode.A) or moveLeft then
-			moveDir -= camCF.RightVector
+		if UIS:IsKeyDown(Enum.KeyCode.A) or moveLeft then 
+			moveDir -= camCF.RightVector 
 		end
-		if UIS:IsKeyDown(Enum.KeyCode.D) or moveRight then
-			moveDir += camCF.RightVector
+		if UIS:IsKeyDown(Enum.KeyCode.D) or moveRight then 
+			moveDir += camCF.RightVector 
 		end
-		if UIS:IsKeyDown(Enum.KeyCode.Space) or moveUp then
-			moveDir += Vector3.new(0, 1, 0)
+		if UIS:IsKeyDown(Enum.KeyCode.Space) or moveUp then 
+			moveDir += Vector3.new(0, 1, 0) 
 		end
-		if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or moveDown then
-			moveDir -= Vector3.new(0, 1, 0)
+		if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or moveDown then 
+			moveDir -= Vector3.new(0, 1, 0) 
 		end
 
 		if moveDir.Magnitude > 0 then
@@ -265,16 +262,21 @@ local function startFly()
 	end)
 end
 
--- Fungsi pembuatan kontrol mobile untuk fly
+-- Fungsi untuk membuat GUI kontrol mobile
 local function createMobileControls()
 	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	if playerGui:FindFirstChild("FlyControlsGUI") then return end
-
+	
+	-- Cek jika sudah ada GUI
+	if playerGui:FindFirstChild("FlyControlsGUI") then
+		return
+	end
+	
 	local screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "FlyControlsGUI"
 	screenGui.ResetOnSpawn = false
 	screenGui.Parent = playerGui
-
+	
+	-- Fungsi untuk membuat tombol
 	local function createButton(text, position, callback)
 		local button = Instance.new("TextButton")
 		button.Size = UDim2.new(0, 70, 0, 70)
@@ -288,35 +290,40 @@ local function createMobileControls()
 		button.TextSize = 24
 		button.Font = Enum.Font.GothamBold
 		button.Parent = screenGui
-
+		
+		-- Rounded corners
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0, 12)
 		corner.Parent = button
-
+		
 		button.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.Touch then
 				callback(true)
 				button.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
 			end
 		end)
-
+		
 		button.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.Touch then
 				callback(false)
 				button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 			end
 		end)
-
+		
 		return button
 	end
-
-	createButton("▲", UDim2.new(0, 20, 0.7, -80), function(pressed) moveForward = pressed end)
-	createButton("▼", UDim2.new(0, 20, 0.7, 0), function(pressed) moveBackward = pressed end)
-	createButton("◄", UDim2.new(0, -60, 0.7, -40), function(pressed) moveLeft = pressed end)
-	createButton("►", UDim2.new(0, 100, 0.7, -40), function(pressed) moveRight = pressed end)
-	createButton("▲", UDim2.new(1, -90, 0.7, -80), function(pressed) moveUp = pressed end)
-	createButton("▼", UDim2.new(1, -90, 0.7, 0), function(pressed) moveDown = pressed end)
-
+	
+	-- Tombol arah
+	createButton("▲", UDim2.new(0, 20, 0.7, -80), function(pressed) moveForward = pressed end) -- W
+	createButton("▼", UDim2.new(0, 20, 0.7, 0), function(pressed) moveBackward = pressed end) -- S
+	createButton("◄", UDim2.new(0, -60, 0.7, -40), function(pressed) moveLeft = pressed end) -- A
+	createButton("►", UDim2.new(0, 100, 0.7, -40), function(pressed) moveRight = pressed end) -- D
+	
+	-- Tombol naik/turun
+	createButton("▲", UDim2.new(1, -90, 0.7, -80), function(pressed) moveUp = pressed end) -- Space
+	createButton("▼", UDim2.new(1, -90, 0.7, 0), function(pressed) moveDown = pressed end) -- Ctrl
+	
+	-- Label info
 	local infoLabel = Instance.new("TextLabel")
 	infoLabel.Size = UDim2.new(0, 200, 0, 30)
 	infoLabel.Position = UDim2.new(0.5, -100, 0.7, -120)
@@ -328,10 +335,13 @@ local function createMobileControls()
 	infoLabel.Parent = screenGui
 end
 
+-- Fungsi untuk menghapus GUI kontrol mobile
 local function removeMobileControls()
 	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local gui = playerGui:FindFirstChild("FlyControlsGUI")
-	if gui then gui:Destroy() end
+	if gui then
+		gui:Destroy()
+	end
 end
 
 FlyTab:CreateButton({
@@ -343,13 +353,28 @@ FlyTab:CreateButton({
 		flying = not flying
 		if flying then
 			startFly()
-			if isMobile then createMobileControls() end
+			
+			-- Tampilkan kontrol mobile jika di perangkat mobile
+			if isMobile then
+				createMobileControls()
+			end
+			
 			local controls = isMobile and "Gunakan tombol on-screen untuk bergerak." or "Gunakan W, A, S, D untuk bergerak. Space = naik, Ctrl = turun."
-			Rayfield:Notify({ Title = "🕊 Fly Aktif!", Content = controls, Duration = 4 })
+			
+			Rayfield:Notify({
+				Title = "🕊 Fly Aktif!",
+				Content = controls,
+				Duration = 4,
+			})
 		else
 			stopFly(char)
 			removeMobileControls()
-			Rayfield:Notify({ Title = "🪶 Fly Dimatikan", Content = "Kamu kembali berjalan normal.", Duration = 3 })
+			
+			Rayfield:Notify({
+				Title = "🪶 Fly Dimatikan",
+				Content = "Kamu kembali berjalan normal.",
+				Duration = 3,
+			})
 		end
 	end,
 })
@@ -365,8 +390,9 @@ FlyTab:CreateSlider({
 	end,
 })
 
+-- Info platform
 FlyTab:CreateButton({
-	Name = "ℹ Platform Info",
+	Name = "ℹ️ Platform Info",
 	Callback = function()
 		local platform = isMobile and "📱 Mobile" or "💻 PC"
 		Rayfield:Notify({
@@ -380,8 +406,7 @@ FlyTab:CreateButton({
 -----------------------------------------------------------
 -- 🎯 CAMERA LOCK TAB (Focus & Teleport in One Tab)
 -----------------------------------------------------------
-local LockTab = Window:CreateTab("🎯 Camera Lock", nil)
-local Camera = Workspace.CurrentCamera
+local LockTab = Window:CreateTab("🎯 Camera Lock", 6337428166)
 
 -- 🔒 Variabel utama
 local lockEnabled = false
@@ -389,10 +414,16 @@ local lockTarget = nil
 local lockConn = nil
 local smoothness = 0.2
 
+-- Simpan kamera asli (tidak digunakan saat ini, tapi disimpan jika butuh restore)
+local Camera = Workspace.CurrentCamera
 local originalType = Camera.CameraType
 local originalSubject = Camera.CameraSubject
 
--- Utility: list player names, find by name, find nearest
+-----------------------------------------------------------
+-- 🔍 Utility Functions
+-----------------------------------------------------------
+
+-- Ambil daftar nama pemain lain
 local function getPlayerNames()
 	local names = {}
 	for _, p in pairs(Players:GetPlayers()) do
@@ -403,18 +434,23 @@ local function getPlayerNames()
 	return names
 end
 
+-- Cari pemain dari nama
 local function findPlayerByName(name)
 	for _, p in pairs(Players:GetPlayers()) do
-		if p.Name == name then return p end
+		if p.Name == name then
+			return p
+		end
 	end
 	return nil
 end
 
+-- Cari pemain terdekat
 local function findNearestPlayer()
 	local char = LocalPlayer.Character
 	if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
 	local myPos = char.HumanoidRootPart.Position
 	local nearest, minDist = nil, math.huge
+
 	for _, p in pairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
 			local dist = (p.Character.HumanoidRootPart.Position - myPos).Magnitude
@@ -427,45 +463,93 @@ local function findNearestPlayer()
 	return nearest
 end
 
+-----------------------------------------------------------
+-- 📷 Core Camera Lock Function
+-----------------------------------------------------------
+
 local function resetCamera()
-	Camera.CameraType = Enum.CameraType.Custom
-	local char = LocalPlayer.Character
-	if char then
-		local humanoid = char:FindFirstChildOfClass("Humanoid")
-		if humanoid then Camera.CameraSubject = humanoid end
+	-- Kembalikan kamera ke mode normal mengikuti player
+	if Camera and Camera.Parent then
+		Camera.CameraType = Enum.CameraType.Custom
+		
+		local char = LocalPlayer.Character
+		if char then
+			local humanoid = char:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				Camera.CameraSubject = humanoid
+			end
+		end
 	end
 end
 
 local function stopLock()
-	if lockConn then lockConn:Disconnect() lockConn = nil end
+	if lockConn then
+		lockConn:Disconnect()
+		lockConn = nil
+	end
+
 	lockEnabled = false
 	lockTarget = nil
+
+	-- Kembalikan kamera ke normal
 	resetCamera()
-	Rayfield:Notify({ Title = "🎯 Lock Dimatikan", Content = "Kamera kembali normal.", Duration = 3 })
+
+	Rayfield:Notify({
+		Title = "🎯 Lock Dimatikan",
+		Content = "Kamera kembali normal.",
+		Duration = 3,
+	})
 end
 
 local function startLock(target)
 	if not target or not target.Character then
-		Rayfield:Notify({ Title = "❌ Gagal", Content = "Target tidak ditemukan atau belum spawn.", Duration = 3 })
+		Rayfield:Notify({
+			Title = "❌ Gagal",
+			Content = "Target tidak ditemukan atau belum spawn.",
+			Duration = 3,
+		})
 		return
 	end
+
 	lockTarget = target
 	lockEnabled = true
-	Camera.CameraType = Enum.CameraType.Scriptable
-	Rayfield:Notify({ Title = "🎯 Lock Aktif", Content = "Kamera fokus pada " .. target.Name, Duration = 3 })
 
+	-- Set kamera jadi scriptable
+	Camera.CameraType = Enum.CameraType.Scriptable
+
+	Rayfield:Notify({
+		Title = "🎯 Lock Aktif",
+		Content = "Kamera fokus pada " .. target.Name,
+		Duration = 3,
+	})
+
+	-- Smooth follow kamera
 	lockConn = RunService.RenderStepped:Connect(function(dt)
-		if not lockEnabled or not lockTarget or not lockTarget.Character then stopLock() return end
+		if not lockEnabled or not lockTarget or not lockTarget.Character then
+			stopLock()
+			return
+		end
+
 		local targetHead = lockTarget.Character:FindFirstChild("Head")
 		if not targetHead then return end
+
+		-- posisi target
 		local targetPos = targetHead.Position + Vector3.new(0, 1, 0)
+
+		-- posisi kamera (jarak tertentu di belakang & atas)
 		local backOffset = Vector3.new(0, 4, 8)
 		local desiredPos = targetHead.CFrame:ToWorldSpace(CFrame.new(backOffset)).p
+
+		-- Smooth Lerp kamera
 		local currentCF = Camera.CFrame
 		local desiredCF = CFrame.new(desiredPos, targetPos)
 		Camera.CFrame = currentCF:Lerp(desiredCF, math.clamp(dt * (1 / smoothness), 0, 1))
 	end)
 end
+
+-----------------------------------------------------------
+-- 🎮 Dropdown + UI Setup
+-----------------------------------------------------------
 
 local selectedName = nil
 local dropdown = LockTab:CreateDropdown({
@@ -485,6 +569,10 @@ end
 Players.PlayerAdded:Connect(refreshDropdown)
 Players.PlayerRemoving:Connect(refreshDropdown)
 
+-----------------------------------------------------------
+-- 🧭 Tombol Kontrol Lock Kamera
+-----------------------------------------------------------
+
 LockTab:CreateButton({
 	Name = "🎯 Lock Player (Selected)",
 	Callback = function()
@@ -492,9 +580,14 @@ LockTab:CreateButton({
 			stopLock()
 		else
 			local p = findPlayerByName(selectedName)
-			if p then startLock(p)
+			if p then
+				startLock(p)
 			else
-				Rayfield:Notify({ Title = "❌ Tidak Ditemukan", Content = "Pemain tidak valid atau belum dipilih.", Duration = 2 })
+				Rayfield:Notify({
+					Title = "❌ Tidak Ditemukan",
+					Content = "Pemain tidak valid atau belum dipilih.",
+					Duration = 2,
+				})
 			end
 		end
 	end,
@@ -508,13 +601,19 @@ LockTab:CreateButton({
 		else
 			local p = findNearestPlayer()
 			if p then startLock(p)
-			else Rayfield:Notify({ Title = "⚠ Tidak Ada Pemain", Content = "Tidak ada pemain lain di dekatmu.", Duration = 2 }) end
+			else
+				Rayfield:Notify({
+					Title = "⚠️ Tidak Ada Pemain",
+					Content = "Tidak ada pemain lain di dekatmu.",
+					Duration = 2,
+				})
+			end
 		end
 	end,
 })
 
 LockTab:CreateSlider({
-	Name = "⚙ Smoothness",
+	Name = "⚙️ Smoothness",
 	Range = {0.05, 1},
 	Increment = 0.05,
 	Suffix = "",
@@ -524,13 +623,29 @@ LockTab:CreateSlider({
 	end,
 })
 
+-----------------------------------------------------------
+-- ⚡ TELEPORT KE POSISI KAMERA (AUTO RESET KAMERA)
+-----------------------------------------------------------
+
 local function teleportToCamera()
 	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	local hrp = char:WaitForChild("HumanoidRootPart")
+
 	local camCF = Camera.CFrame
 	hrp.CFrame = camCF + camCF.LookVector * -2 + Vector3.new(0, 3, 0)
-	if lockEnabled then stopLock() else resetCamera() end
-	Rayfield:Notify({ Title = "⚡ Teleport Berhasil!", Content = "Kamu berpindah ke posisi kamera. Kamera kembali normal 🎯", Duration = 3 })
+
+	-- ✅ RESET KAMERA SETELAH TELEPORT
+	if lockEnabled then
+		stopLock()
+	else
+		resetCamera()
+	end
+
+	Rayfield:Notify({
+		Title = "⚡ Teleport Berhasil!",
+		Content = "Kamu berpindah ke posisi kamera. Kamera kembali normal 🎯",
+		Duration = 3,
+	})
 end
 
 LockTab:CreateButton({
@@ -538,7 +653,77 @@ LockTab:CreateButton({
 	Callback = teleportToCamera,
 })
 
-LocalPlayer.CharacterRemoving:Connect(function() stopLock() end)
-Players.PlayerRemoving:Connect(function(p) if lockTarget == p then stopLock() end end)
+-----------------------------------------------------------
+-- 🔄 Cleanup jika target hilang
+-----------------------------------------------------------
 
+LocalPlayer.CharacterRemoving:Connect(stopLock)
+Players.PlayerRemoving:Connect(function(p)
+	if lockTarget == p then
+		stopLock()
+	end
+end)
+
+print("[asmita Hub] 🎯 Camera Lock Tab Loaded (Focus + Teleport Unified)")
+
+-----------------------------------------------------------
+-- 🚫 NOCLIP TAB
+-----------------------------------------------------------
+local NoclipTab = Window:CreateTab("🚫 Noclip", 7218471280)
+
+local noclipEnabled = false
+local player = Players.LocalPlayer
+
+-- Fungsi aktifkan Noclip
+local function enableNoclip()
+	noclipEnabled = true
+	Rayfield:Notify({
+		Title = "🚫 Noclip Aktif",
+		Content = "Kamu sekarang bisa menembus dinding atau rintangan.",
+		Duration = 4,
+	})
+end
+
+-- Fungsi nonaktifkan Noclip
+local function disableNoclip()
+	noclipEnabled = false
+	Rayfield:Notify({
+		Title = "✅ Noclip Dimatikan",
+		Content = "Kamu kembali ke mode normal.",
+		Duration = 3,
+	})
+end
+
+-- Toggle button
+NoclipTab:CreateButton({
+	Name = "🔀 Toggle Noclip (On/Off)",
+	Callback = function()
+		if noclipEnabled then
+			disableNoclip()
+		else
+			enableNoclip()
+		end
+	end,
+})
+
+-- Loop Noclip
+RunService.Stepped:Connect(function()
+	if noclipEnabled then
+		local char = player.Character
+		if char then
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") and part.CanCollide == true then
+					part.CanCollide = false
+				end
+			end
+		end
+	end
+end)
+
+-- Cleanup saat fly dimatikan
+Players.LocalPlayer.CharacterRemoving:Connect(function()
+	removeMobileControls()
+end)
+
+-----------------------------------------------------------
 print("[asmita Hub] ✅ Loaded successfully - PC & Mobile Compatible!")
