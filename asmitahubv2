@@ -49,32 +49,157 @@ Rayfield:Notify({
 	Image = 13047715178,
 })
 
--- 🪂 Infinite Jump
+-- 🪂 Infinite Jump (PC + Mobile)
+-- Penjelasan singkat implementasi:
+--  - PC: gunakan UserInputService.InputBegan untuk mendeteksi Space dan set humanoid.Jump = true
+--  - Mobile: tampilkan tombol on-screen (ScreenGui/TextButton) saat fitur aktif; saat tombol ditekan akan memicu jump secara terus-menerus
+--  - Semua koneksi disimpan agar bisa di-disconnect jika dibutuhkan
+
+-- State global / koneksi
+_G.infinjump = _G.infinjump or false
+local infJumpStarted = false
+local infJumpInputConn = nil
+local infJumpRenderConn = nil
+local mobileJumpGui = nil
+local mobileJumpPressed = false
+
+local isMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
+local plr = Players.LocalPlayer
+
+local function createMobileInfJumpButton()
+	-- Jika sudah ada, jangan buat ulang
+	local playerGui = plr:WaitForChild("PlayerGui")
+	if playerGui:FindFirstChild("InfJumpGUI") then
+		mobileJumpGui = playerGui:FindFirstChild("InfJumpGUI")
+		return
+	end
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "InfJumpGUI"
+	screenGui.ResetOnSpawn = false
+	screenGui.Parent = playerGui
+
+	-- Tombol transparan di pojok kanan bawah (atau ubah posisi sesuai selera)
+	local btn = Instance.new("TextButton")
+	btn.Name = "InfJumpButton"
+	btn.Size = UDim2.new(0, 90, 0, 90)
+	btn.Position = UDim2.new(1, -110, 1, -130)
+	btn.AnchorPoint = Vector2.new(0, 0)
+	btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	btn.BackgroundTransparency = 0.35
+	btn.BorderSizePixel = 0
+	btn.Text = "Jump\n(On)"
+	btn.TextWrapped = true
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 18
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Parent = screenGui
+
+	local corner = Instance.new("UICorner", btn)
+	corner.CornerRadius = UDim.new(0, 18)
+
+	-- tekan & lepaskan
+	btn.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			mobileJumpPressed = true
+			btn.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
+		end
+	end)
+	btn.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			mobileJumpPressed = false
+			btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+		end
+	end)
+
+	mobileJumpGui = screenGui
+end
+
+local function removeMobileInfJumpButton()
+	if mobileJumpGui and mobileJumpGui.Parent then
+		mobileJumpGui:Destroy()
+		mobileJumpGui = nil
+		mobileJumpPressed = false
+	end
+end
+
+-- Fungsi untuk mengaktifkan koneksi infinite jump (hanya di-run sekali)
+local function startInfJumpConnections()
+	if infJumpStarted then return end
+	infJumpStarted = true
+
+	-- PC / keyboard: deteksi Space via InputBegan
+	infJumpInputConn = UIS.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if not _G.infinjump then return end
+
+		-- Space (keyboard) -> trigger jump
+		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.Space then
+			local char = plr.Character
+			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				-- prefer humanoid.Jump agar kompatibel
+				humanoid.Jump = true
+			end
+		end
+	end)
+
+	-- RenderStepped loop untuk mobile continuous jump (ketika tombol ditekan)
+	infJumpRenderConn = RunService.RenderStepped:Connect(function()
+		if not _G.infinjump then return end
+
+		-- Mobile: jika tombol on-screen sedang ditekan, berikan jump terus-menerus
+		if isMobile and mobileJumpPressed then
+			local char = plr.Character
+			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.Jump = true
+			end
+		end
+	end)
+
+	-- Safety: ketika karakter respawn, pastikan mobile UI direcreate jika aktif
+	plr.CharacterAdded:Connect(function()
+		-- sedikit delay agar PlayerGui siap
+		task.wait(0.5)
+		if _G.infinjump and isMobile then
+			createMobileInfJumpButton()
+		end
+	end)
+
+	-- Cleanup saat PlayerGui hilang respawn/destroy
+	Players.LocalPlayer.CharacterRemoving:Connect(function()
+		-- pastikan flag reset
+		mobileJumpPressed = false
+	end)
+end
+
+-- Tombol pada GUI untuk toggle Infinite Jump
 MainTab:CreateButton({
 	Name = "🪂 Infinite Jump Toggle",
 	Callback = function()
 		_G.infinjump = not _G.infinjump
 
-		if _G.infinJumpStarted == nil then
-			_G.infinJumpStarted = true
-			local plr = Players.LocalPlayer
-			local m = plr:GetMouse()
-			m.KeyDown:Connect(function(k)
-				-- safe check dan cuma tangani space
-				if _G.infinjump and k:byte() == 32 then
-					local char = plr.Character
-					if char then
-						local humanoid = char:FindFirstChildOfClass('Humanoid')
-						if humanoid then
-							humanoid:ChangeState('Jumping')
-							task.wait()
-							-- fallback agar tidak tetap di seated
-							pcall(function() humanoid:ChangeState('Seated') end)
-						end
-					end
-				end
-			end)
+		-- inisialisasi koneksi jika belum
+		if not infJumpStarted then
+			startInfJumpConnections()
 		end
+
+		-- Tampilkan / hapus tombol mobile jika perangkat mobile
+		if isMobile then
+			if _G.infinjump then
+				createMobileInfJumpButton()
+			else
+				removeMobileInfJumpButton()
+			end
+		end
+
+		-- Notify status
+		Rayfield:Notify({
+			Title = "🪂 Infinite Jump",
+			Content = _G.infinjump and "Aktif (PC: tekan Space, Mobile: tekan tombol On-Screen)" or "Dimatikan",
+			Duration = 3,
+		})
 	end,
 })
 
@@ -723,6 +848,7 @@ end)
 -- Cleanup saat fly dimatikan
 Players.LocalPlayer.CharacterRemoving:Connect(function()
 	removeMobileControls()
+	removeMobileInfJumpButton()
 end)
 
 -----------------------------------------------------------
